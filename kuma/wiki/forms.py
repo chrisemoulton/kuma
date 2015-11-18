@@ -435,8 +435,7 @@ class RevisionForm(AkismetFormMixin, forms.ModelForm):
         'wiki_akismet_exempted' waffle flag are exempted from spam checks.
         """
         client_ready = super(RevisionForm, self).akismet_enabled()
-        user_exempted = waffle.flag_is_active(self.request,
-                                              SPAM_EXEMPTED_FLAG)
+        user_exempted = waffle.flag_is_active(self.request, SPAM_EXEMPTED_FLAG)
         return client_ready and not user_exempted
 
     @property
@@ -510,7 +509,8 @@ class RevisionForm(AkismetFormMixin, forms.ModelForm):
             # need to evolve over time; a section edit doesn't submit
             # all the fields, and we need to account for that when we
             # construct the new Revision.
-            old_rev = Document.objects.get(pk=self.instance.document.id).current_revision
+            doc = Document.objects.get(pk=self.instance.document.id)
+            old_rev = doc.current_revision
             new_rev = super(RevisionForm, self).save(**kwargs)
             new_rev.document = document
             new_rev.creator = self.request.user
@@ -529,8 +529,10 @@ class RevisionForm(AkismetFormMixin, forms.ModelForm):
 
             # when enabled store the user's IP address
             if waffle.switch_is_active('store_revision_ips'):
-                ip = self.request.META.get('REMOTE_ADDR')
-                RevisionIP.objects.create(revision=new_rev, ip=ip)
+                RevisionIP.objects.log(
+                    revision=new_rev,
+                    headers=self.request.META,
+                )
 
             # send first edit emails
             if is_first_edit:
