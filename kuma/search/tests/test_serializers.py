@@ -1,7 +1,10 @@
+from collections import OrderedDict
 import mock
 from nose.tools import ok_, eq_
 
 from django.utils import translation
+from rest_framework import serializers
+from rest_framework.test import APIRequestFactory
 
 from kuma.wiki.search import WikiDocumentType
 
@@ -27,8 +30,13 @@ class SerializerTests(ElasticTestCase):
             'slug': 'serializer',
             'tags': ['tag'],
             'operator': 'OR',
-            'group': {'name': 'Group', 'slug': 'group', 'order': 1},
-            'shortcut': None})
+            'group': OrderedDict({
+                'order': 1,
+                'name': 'Group',
+                'slug': 'group',
+            }),
+            'shortcut': None,
+        })
 
     @mock.patch('kuma.search.serializers.ugettext')
     def test_filter_serializer_with_translations(self, _mock):
@@ -60,22 +68,28 @@ class SerializerTests(ElasticTestCase):
         search = search.query('match', summary='CSS')
         search = search.highlight(*WikiDocumentType.excerpt_fields)
         result = search.execute()
-        data = DocumentSerializer(result, many=True).data
-        eq_(data[0]['excerpt'], u'A <em>CSS</em> article')
+        serializer = DocumentSerializer(result, many=True)
+        eq_(serializer.data[0]['excerpt'], u'A <em>CSS</em> article')
+
+
+class SearchQueryFieldSerializer(serializers.Serializer):
+    q = SearchQueryField()
 
 
 class FieldTests(ElasticTestCase):
 
     def test_SearchQueryField(self):
-        request = self.get_request('/?q=test')
+        request = APIRequestFactory().get('/?q=test')
         # APIRequestFactory doesn't actually return APIRequest objects
         # but standard HttpRequest objects due to the way it initializes
         # the request when APIViews are called
-        request.QUERY_PARAMS = request.GET
-
-        field = SearchQueryField()
-        field.context = {'request': request}
-        eq_(field.to_native(None), 'test')
+        request.query_params = request.GET
+        serializer = SearchQueryFieldSerializer(
+            data={},
+            context={'request': request},
+        )
+        serializer.is_valid()
+        eq_(serializer.data, {'q': 'test'})
 
     def test_SiteURLField(self):
         class FakeValue(object):
@@ -83,5 +97,5 @@ class FieldTests(ElasticTestCase):
             locale = 'de'
 
         field = SiteURLField('wiki.document', args=['slug'])
-        value = field.to_native(FakeValue())
+        value = field.to_representation(FakeValue())
         ok_('/de/docs/Firefox' in value)

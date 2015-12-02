@@ -1,7 +1,10 @@
 # -*- coding: utf-8 -*-
+from collections import OrderedDict
 import elasticsearch
 from nose.tools import eq_
+
 from . import ElasticTestCase
+from ..pagination import SearchPagination
 from ..models import Index, Filter, FilterGroup
 from ..views import SearchView
 
@@ -12,7 +15,6 @@ class ViewTests(ElasticTestCase):
 
     def test_search_rendering(self):
         """The search view """
-        # self.refresh()
         response = self.client.get('/en-US/search?q=test')
         eq_(response.status_code, 200)
         self.assertContains(response, 'Results for')
@@ -35,13 +37,18 @@ class ViewTests(ElasticTestCase):
             def dispatch(self, *args, **kwargs):
                 super(Test1SearchView, self).dispatch(*args, **kwargs)
                 eq_(self.serialized_filters,
-                    [{'name': 'Tagged',
-                      'slug': 'tagged',
-                      'tags': ['tagged'],
-                      'operator': 'OR',
-                      'group': {'name': 'Group', 'slug': 'group', 'order': 1},
-                      'shortcut': None
-                      }])
+                    [OrderedDict({
+                        'name': 'Tagged',
+                        'slug': 'tagged',
+                        'shortcut': None,
+                        'tags': ['tagged'],
+                        'operator': 'OR',
+                        'group': OrderedDict({
+                            'order': 1,
+                            'name': 'Group',
+                            'slug': 'group',
+                        }),
+                    })])
 
         test_view1 = Test1SearchView.as_view()
         test_view1(self.get_request('/en-US/'))
@@ -183,7 +190,15 @@ class ViewTests(ElasticTestCase):
 
     def test_paginate_by_param(self):
         request = self.get_request('/en-US/search')
-        view = SearchView.as_view(paginate_by=1)
+
+        class TestPageNumberPagination(SearchPagination):
+            page_size = 1
+            page_size_query_param = 'per_page'
+
+        class PaginationSearchView(SearchView):
+            pagination_class = TestPageNumberPagination
+
+        view = PaginationSearchView.as_view()
         response = view(request)
         eq_(response.data['pages'], 6)
 
